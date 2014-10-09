@@ -27,9 +27,9 @@ function develEnviroment() {
   }
   else {
 
-    $last_line = exec('ip addr show | grep 10.77.');
+    $last_line = exec('ip addr show | grep 192.168.');
 
-    if ( strpos( $last_line, '10.77.' ) !== false ) {
+    if ( strpos( $last_line, '192.168.' ) !== false ) {
       $develEnv = true;
     }
 
