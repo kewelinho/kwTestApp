@@ -1,0 +1,21 @@
+# Exclude log directory
+c_app/log/
+
+# Exclude backups directory
+c_app/backups
+
+# Exclude templates directory
+c_app/tmp/*
+c_app/tmp/templates_c/
+
+# mediaserver caches
+httpdocs/mediaCache/
+httpdocs/vendor/
+httpdocs/vendorServer/
+
+/bower.json
+composer.json
+composer.lock
+
+*.log
+

@@ -1,0 +1,366 @@
+#!/usr/bin/php -q
+<?php
+  //
+  // CARGO COGUMELO, É PRECISO FACER UNS CANTOS APAÑOS 
+  //
+
+  // Project location
+  define('SITE_PATH', getcwd().'/c_app/');
+  $_SERVER['HTTPS'] = false;
+  $_SERVER['HTTP_HOST'] = '';
+  $_SERVER['REQUEST_URI'] = 'cogumelo shell script';
+  $_SERVER['REMOTE_ADDR'] = "local_shell";
+
+  // cogumelo core Location
+  set_include_path('.:'.SITE_PATH);
+
+  require_once("conf/setup.php"); 
+  
+
+  require_once(COGUMELO_LOCATION."/c_classes/CogumeloClass.php");
+  require_once(SITE_PATH."/Cogumelo.php");
+
+  global $_C;
+  $_C =Cogumelo::get();
+
+  //
+  //  CARGO MÓDULO DEVEL E O DEVELDBCONTROLLER, QUE É ONDE ESTÁN OS MÉTODOS QUE NOS INTERESAN
+  //
+  require_once(COGUMELO_LOCATION."/c_modules/devel/devel.php");
+  require_once(COGUMELO_LOCATION."/c_modules/devel/classes/controller/DevelDBController.php");
+
+  //
+  //  UTILIZO A CLASE COMO FARÍA DENDE UN VIEW NORMAL
+  //
+  $develdbcontrol = new DevelDBController();
+  //var_dump( $develdbcontrol->getTablesSQL() ); // este método, por exemplo, devolvenos todo o  SQL xerado para os VO's do proxecto
+
+
+   if ($argc>1){ //parameters handler
+      switch($argv[1]){
+        case 'setPermissions': // set the files/folders permission
+          setPermissions();
+        break;   
+
+        case 'setPermissionsDevel': // set the files/folders permission
+          setPermissionsDevel();
+        break;   
+        
+        case 'createDB': // create database
+          $user =  ReadStdin("Enter an user with privileges:\n", '');
+          // Get the password
+          fwrite(STDOUT, "Enter the password:\n");
+          $passwd = getPassword(true);
+          createDB($user, $passwd);
+          fwrite(STDOUT, "\n--\n");
+        break; 
+
+        case 'createTables': // create database tables
+          createTables();
+          echo "\nGenerated db tables\n";
+        break;    
+
+        case 'bckDB': // do the backup of the db
+          if ($argc>2){
+            $file = $argv[2].'.sql';//name of the backup file
+          }
+          else{
+            $file = false;
+          }
+          $user =  ReadStdin('Enter an user with privileges: ', '');
+          doBackup(DB_NAME, $user, $file);
+        break;  
+
+        case 'restoreDB': // restore the backup of a given db
+          if ($argc>2){
+           $db = $argv[2];
+           $user =  ReadStdin('Enter an user with privileges: ', '');
+           retoreDB(DB_NAME, $user, $db);
+          }
+          else{
+            echo "You must especify the database to restore\n"; 
+          }
+        break;  
+
+        case 'installDependences': 
+            Cogumelo::load('c_controller/DependencesController');
+
+            $dependencesControl = new DependencesController();
+            $dependencesControl->installDependences();
+        break; 
+
+        case 'generateTranslations': 
+           translateWeb();
+           generateTranslations();
+           echo "The files.po are ready to be edited!\n";
+        break;  
+
+        case 'compileTranslations': 
+           translateWeb();
+           compileTranslations();
+           echo "The files.mo are ready to be used!\n";
+        break;
+
+        /* We execute this two actions from web as we need to operate with the apache permissions*/
+        case 'flush': // delete temporary files
+           exec('wget -q --spider http://cogumelo/cogumelo-script.php?q=flush');
+           echo "Temporary files deleted!\n";
+        break;    
+
+        case 'rotateLogs': 
+            exec('wget -q --spider cogumelo/cogumelo-script.php?q=logs');
+            echo "The logs have been stored\n";
+        break;  
+
+        default:
+          echo "Invalid parameter;try: 
+          flush                 to remove temporary files
+          setPermissions        to set the files/folders permission
+          setPermissionsDevel   to set the files/folders permission
+          creteDB               to create a database
+          creteTables           to generate the tables
+          bckDB                 to do a DB backup (optional arg: filename)
+          restoreDB             to restore a database
+          installDependences    to install all modules dependencies
+          generateTranslations  to get all the web text into a file.po
+          compileTranslations   to compile file.po and get the translations ready\n";
+
+      }//end switch 
+  }//end parameters handler
+  else{
+    echo "Not enough arguments;try: 
+          flush                 to remove temporary files
+          setPermissions        to set the files/folders permission
+          setPermissionsDevel   to set the files/folders permission
+          creteDB               to create a database
+          creteTables           to generate the tables
+          bckDB                 to do a DB backup (optional arg: filename)
+          restoreDB             to restore a database
+          installDependences    to install all modules dependencies
+          generateTranslations  to get all the web text into a file.po
+          compileTranslations   to compile file.po and get the translations ready\n";
+  }
+
+  function createDB($user, $passwd){
+    $develdbcontrol = new DevelDBController($user, $passwd);
+    $develdbcontrol->createSchemaDB();
+    echo "\nDatase created!\n";
+  }
+
+  function createTables(){
+
+    Cogumelo::load('c_controller/ModuleController');
+    $moduleControl = new ModuleController(false, true);
+
+    $develdbcontrol = new DevelDBController();
+    $develdbcontrol->createTables();
+  }
+
+  function setPermissions(){
+    exec('mkdir -p c_app/tmp/templates_c');
+    exec('mkdir -p c_app/log');
+    exec('mkdir -p c_app/backups');
+    exec('mkdir -p httpdocs/mediaCache');  
+    
+    exec('sudo chown -R $USER:www-data httpdocs');
+    exec('chmod -R go-rwx,g+rX httpdocs');
+
+    exec('sudo chown -R $USER:www-data c_app');
+    exec('chmod -R g-x,o-wx,g+rwX,o+rX c_app');
+    exec('chmod -R ug+rwX,o+rX c_app/tmp c_app/log httpdocs/mediaCache');
+
+    exec('sudo chown $USER:$USER c_app/backups');
+    exec('chmod -R go-rwx c_app/backups');
+
+    echo "Permissions ready!\n";
+  }
+
+
+  function setPermissionsDevel(){
+    exec('mkdir -p c_app/tmp/templates_c');
+    exec('mkdir -p c_app/log');
+    exec('mkdir -p c_app/backups');
+    exec('mkdir -p httpdocs/mediaCache');  
+    
+    exec('sudo chown -R $USER:www-data httpdocs');
+    exec('chmod -R u-x,go-wx,ugo+rX httpdocs');
+
+    exec('sudo chown -R $USER:www-data c_app');
+    exec('chmod -R go-wx,go+rX c_app');
+    exec('chmod -R ug+rwX,o+rX c_app/tmp c_app/log httpdocs/mediaCache');
+
+    exec('sudo chown $USER:$USER c_app/backups');
+    exec('chmod -R go-rwx c_app/backups');
+
+    echo "Permissions ready!\n";
+  }
+
+  function doBackup($BD, $user, $file){
+
+    if (!$file)
+      $file = date('Ymd-Hms').'-'.$BD.'.sql';
+
+    $DIR = BCK;
+
+    popen('mysqldump -u '.$user.' -p '.$BD.'> '.$DIR.'/'.$file, 'r');
+    exec('sudo gzip '.$DIR.'/'.$file);
+    exec('chmod go-rwx '.$DIR.'/*');
+    echo "\nYour db was successfully saved!\n";
+  }
+
+  function retoreDB($BD, $user, $file){
+
+    $DIR = BCK;
+
+    $type = exec('file '.$DIR.$file);
+    $position = strpos($type, 'gzip');
+    if ($position!=false){
+      popen('gunzip -c '.$DIR.$file.' | mysql -u '.$user.' -p '.$BD, 'r');
+    }
+    else{
+      popen('mysql -u '.$user.' -p '.$BD.'< '.$DIR.$file, 'r');
+    }
+    echo "\nYour db was successfully restored!\n";
+  }
+
+  /**
+  * Prepare the enviroment to localize the project
+  */
+  function translateWeb(){
+    $textdomain="c_cogumelo";
+    
+    $locale= 'es_ES';
+    
+    global $c_lang;
+    
+    putenv('LANGUAGE='.$locale);
+    putenv('LANG='.$locale);
+    putenv('LC_ALL='.$locale);
+    putenv('LC_MESSAGES='.$locale);
+    
+    setlocale(LC_ALL,$locale);
+    setlocale(LC_CTYPE,$locale);
+
+    bindtextdomain($textdomain, SITE_PATH.'conf/i18n');
+    bind_textdomain_codeset($textdomain, 'UTF-8'); 
+    textdomain($textdomain);
+  }
+
+  
+  function generateTranslations(){
+    /**
+    * Prepare the enviroment to localize the project
+    */
+    $textdomain="c_cogumelo";
+    
+    $locale= 'es_ES';
+    
+    global $c_lang;
+    
+    putenv('LANGUAGE='.$locale);
+    putenv('LANG='.$locale);
+    putenv('LC_ALL='.$locale);
+    putenv('LC_MESSAGES='.$locale);
+    
+    setlocale(LC_ALL,$locale);
+    setlocale(LC_CTYPE,$locale);
+
+    bindtextdomain($textdomain, SITE_PATH.'conf/i18n');
+    bind_textdomain_codeset($textdomain, 'UTF-8'); 
+    textdomain($textdomain);
+
+    /**
+    * Generate files.po or update them if don't exist already
+    */
+    foreach(explode(',', 'gl,es,en') as $lng) {
+      $filepath = SITE_PATH.'conf/i18n/'.$lng.'/LC_MESSAGES/';
+      if (is_dir($filepath)) {
+        $handle = opendir($filepath);
+        while ($file = readdir($handle)) {
+          $parts = explode('.',$file);
+          if ($parts[1]!='.po'){
+            exec('xgettext --from-code=UTF-8 -o '.$filepath.$textdomain.'_php.po '.SITE_PATH.'../*.php');
+            // exec('xgettext --from-code=UTF-8 -o '.$filepath.$textdomain.'_js.po '.SITE_PATH.'../*.php');
+            // exec('xgettext --from-code=UTF-8 -o '.$filepath.$textdomain.'_tpl.po '.SITE_PATH.'../*.php');
+          }
+          else{
+            shell_exec('find '.SITE_PATH.'. -iname "*.php" -o -iname "*.php" | xargs xgettext -kT_gettext -kT_ --from-code utf-8 -d '.$textdomain.'_php -o '.$filepath.$textdomain.'.pot -L PHP');
+            shell_exec('msgmerge -U '.$filepath.$textdomain.'_php.po '.$filepath.$textdomain.'_php.pot');
+          }
+        }
+        closedir($handle);
+      }
+    }
+  }
+
+  /**
+  * Compile files.po to get the translations ready to be used
+  */
+  function compileTranslations(){
+    $textdomain="c_cogumelo";
+    foreach(explode(',', 'gl,es,en') as $lng) {
+      $filepath = SITE_PATH.'conf/i18n/'.$lng.'/LC_MESSAGES/';
+      exec('msgfmt -o '.$filepath.$textdomain.'_php.mo '.$filepath.$textdomain.'_php.po');
+      // exec('msgfmt -o '.$filepath.$textdomain.'_js.mo '.$filepath.$textdomain.'_js.po');
+      // exec('msgfmt -o '.$filepath.$textdomain.'_tpl.mo '.$filepath.$textdomain.'_tpl.po');
+    }
+  }
+
+  /**
+   * Get data from the shell.
+   */
+  function ReadStdin($prompt, $valid_inputs, $default = '') { 
+      while(!isset($input) || (is_array($valid_inputs) && !in_array($input, $valid_inputs)) || ($valid_inputs == 'is_file' && !is_file($input))) { 
+          echo $prompt; 
+          $input = strtolower(trim(fgets(STDIN))); 
+          if(empty($input) && !empty($default)) { 
+              $input = $default; 
+          } 
+      } 
+      return $input; 
+  } 
+
+  /**
+   * Get a password from the shell.
+   * This function works on *nix systems only and requires shell_exec and stty.
+   *
+   * @param  boolean $stars Wether or not to output stars for given characters
+   * @return string
+   */
+  function getPassword($stars = false)
+  {
+      // Get current style
+      $oldStyle = shell_exec('stty -g');
+
+      if ($stars === false) {
+          shell_exec('stty -echo');
+          $password = rtrim(fgets(STDIN), "\n");
+      } else {
+          shell_exec('stty -icanon -echo min 1 time 0');
+
+          $password = '';
+          while (true) {
+              $char = fgetc(STDIN);
+
+              if ($char === "\n") {
+                  break;
+              } else if (ord($char) === 127) {
+                  if (strlen($password) > 0) {
+                      fwrite(STDOUT, "\x08 \x08");
+                      $password = substr($password, 0, -1);
+                  }
+              } else {
+                  fwrite(STDOUT, "*");
+                  $password .= $char;
+              }
+          }
+      }
+
+      // Reset old style
+      shell_exec('stty ' . $oldStyle);
+
+      // Return the password
+      return $password;
+  }  
+
+?>
